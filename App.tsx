@@ -100,29 +100,52 @@ const App: React.FC = () => {
     setIsModalOpen(false);
   };
 
+  const handleImportCSV = (importedTasks: Partial<Task>[]) => {
+    if (!currentUser) return;
+    
+    const confirmImport = confirm(`Bạn có muốn thêm ${importedTasks.length} đầu việc mới từ file CSV vào danh sách hiện tại không?`);
+    if (!confirmImport) return;
+
+    const storageKey = `tasks_${currentUser.id}`;
+    let userTasks = JSON.parse(localStorage.getItem(storageKey) || '[]');
+
+    // Bổ sung các thông tin bắt buộc còn thiếu
+    const newProcessedTasks: Task[] = importedTasks.map((t, index) => ({
+      id: (Date.now() + index).toString(),
+      stt: userTasks.length + index + 1,
+      content: t.content || 'Nội dung trống',
+      documentRef: t.documentRef || 'Không rõ',
+      deadline: t.deadline || new Date().toISOString().split('T')[0],
+      status: t.status || TaskStatus.PENDING,
+      notes: t.notes || '',
+      userId: currentUser.id,
+      ownerName: currentUser.fullName
+    }));
+
+    const updatedList = [...userTasks, ...newProcessedTasks];
+    // Đánh lại STT cho toàn bộ danh sách để đảm bảo tính liên tục
+    const reindexedList = updatedList.map((t, i) => ({ ...t, stt: i + 1 }));
+
+    localStorage.setItem(storageKey, JSON.stringify(reindexedList));
+    loadAllTasks();
+    alert(`Đã nhập thành công ${newProcessedTasks.length} đầu việc.`);
+  };
+
   const handleDeleteTask = (taskId: string) => {
     let success = false;
-    // Lấy danh sách khóa một cách tĩnh để tránh lỗi khi dữ liệu thay đổi trong vòng lặp
     const keys = Object.keys(localStorage).filter(k => k.startsWith('tasks_'));
     
     for (const key of keys) {
       try {
         const storedTasks = JSON.parse(localStorage.getItem(key) || '[]');
         const initialCount = storedTasks.length;
-        
-        // Lọc bỏ task, đảm bảo so sánh chuỗi để tránh lỗi kiểu dữ liệu
         const filtered = storedTasks.filter((t: any) => String(t.id) !== String(taskId));
         
         if (filtered.length < initialCount) {
-          // Cập nhật lại số thứ tự (STT) cho đẹp
-          const updated = filtered.map((t: any, index: number) => ({
-            ...t,
-            stt: index + 1
-          }));
-          
+          const updated = filtered.map((t: any, index: number) => ({ ...t, stt: index + 1 }));
           localStorage.setItem(key, JSON.stringify(updated));
           success = true;
-          break; // Đã tìm thấy và xóa xong ở một user, không cần quét tiếp
+          break;
         }
       } catch (e) {
         console.error("Lỗi khi xóa:", key, e);
@@ -130,12 +153,10 @@ const App: React.FC = () => {
     }
 
     if (success) {
-      // Cập nhật State cục bộ ngay lập tức để UI phản hồi nhanh
       setTasks(prev => prev.filter(t => String(t.id) !== String(taskId)));
-      // Sau đó nạp lại toàn bộ để đồng bộ STT nếu cần
       loadAllTasks();
     } else {
-      alert("Không thể xóa công việc này. Dữ liệu có thể đã thay đổi hoặc không tồn tại.");
+      alert("Không thể xóa công việc này.");
     }
   };
 
@@ -192,6 +213,7 @@ const App: React.FC = () => {
                  onEditClick={(t) => { setEditingTask(t); setIsModalOpen(true); }}
                  onDeleteClick={handleDeleteTask}
                  onViewClick={(t) => { setViewingTask(t); setIsDetailModalOpen(true); }}
+                 onImportTasks={handleImportCSV}
                />
             )}
             {currentView === 'calendar' && <CalendarView tasks={enrichedTasks} onTaskClick={(t) => { setViewingTask(t); setIsDetailModalOpen(true); }} />}

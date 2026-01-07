@@ -1,7 +1,9 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Task, TaskStatus } from '../types';
-import { Eye, Pencil, Trash2, Zap, AlertTriangle, Filter, CalendarDays, ChevronRight } from 'lucide-react';
+import { Eye, Pencil, Trash2, Zap, AlertTriangle, Filter, CalendarDays, ChevronRight, Upload, FileDown } from 'lucide-react';
+import { parseCSVToTasks } from '../utils/csvImport';
+import { exportTasksToCSV } from '../utils/csvExport';
 
 interface TaskTableProps {
   tasks: Task[];
@@ -10,6 +12,7 @@ interface TaskTableProps {
   onEditClick: (task: Task) => void;
   onDeleteClick: (taskId: string) => void;
   onViewClick: (task: Task) => void;
+  onImportTasks: (newTasks: Partial<Task>[]) => void;
 }
 
 const getStatusBadge = (task: Task) => {
@@ -45,10 +48,11 @@ const getStatusBadge = (task: Task) => {
   }
 };
 
-export const TaskTable: React.FC<TaskTableProps> = ({ tasks, showOwner, onAddNewClick, onEditClick, onDeleteClick, onViewClick }) => {
+export const TaskTable: React.FC<TaskTableProps> = ({ tasks, showOwner, onAddNewClick, onEditClick, onDeleteClick, onViewClick, onImportTasks }) => {
   const currentSystemDate = new Date();
   const [selectedYear, setSelectedYear] = useState<number>(currentSystemDate.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState<number | 'all'>(currentSystemDate.getMonth());
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const years = useMemo(() => {
     const uniqueYears: number[] = Array.from(new Set(tasks.map(t => new Date(t.deadline).getFullYear())));
@@ -63,11 +67,34 @@ export const TaskTable: React.FC<TaskTableProps> = ({ tasks, showOwner, onAddNew
     });
   }, [tasks, selectedYear, selectedMonth]);
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const importedData = parseCSVToTasks(text);
+      if (importedData.length > 0) {
+        onImportTasks(importedData);
+      } else {
+        alert("Không tìm thấy dữ liệu hợp lệ trong file CSV.");
+      }
+    };
+    reader.readAsText(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleExportCSV = () => {
+    const filename = `BAO_CAO_TIEN_DO_${selectedMonth === 'all' ? selectedYear : `${selectedMonth + 1}_${selectedYear}`}.csv`;
+    exportTasksToCSV(filteredTasks, filename);
+  };
+
   const monthNames = ["Tháng 1", "Tháng 2", "Tháng 3", "Tháng 4", "Tháng 5", "Tháng 6", "Tháng 7", "Tháng 8", "Tháng 9", "Tháng 10", "Tháng 11", "Tháng 12"];
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-      <div className="p-6 border-b border-slate-200 flex flex-col md:flex-row justify-between items-center bg-slate-50/50 gap-4">
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in duration-500">
+      <div className="p-6 border-b border-slate-200 flex flex-col xl:flex-row justify-between items-center bg-slate-50/50 gap-4">
         <div className="flex items-center gap-4">
            <div className="p-3 bg-blue-600 rounded-xl text-white shadow-lg shadow-blue-100">
               <ChevronRight size={24} />
@@ -91,9 +118,33 @@ export const TaskTable: React.FC<TaskTableProps> = ({ tasks, showOwner, onAddNew
                 {years.map(y => <option key={y} value={y}>{y}</option>)}
             </select>
           </div>
-          <button onClick={onAddNewClick} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-xl text-sm font-bold shadow-lg transition-all active:scale-95">
-            + THÊM MỚI
-          </button>
+          
+          <div className="flex items-center gap-2">
+            <input 
+              type="file" 
+              accept=".csv" 
+              ref={fileInputRef} 
+              onChange={handleFileChange} 
+              className="hidden" 
+            />
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-sm font-bold transition-all border border-slate-200"
+              title="Nhập dữ liệu từ file CSV"
+            >
+              <Upload size={16} /> NHẬP CSV
+            </button>
+            <button 
+              onClick={handleExportCSV}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-indigo-600 px-4 py-2 rounded-xl text-sm font-bold transition-all border border-indigo-100"
+              title="Xuất danh sách đang hiển thị ra CSV"
+            >
+              <FileDown size={16} /> XUẤT CSV
+            </button>
+            <button onClick={onAddNewClick} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-xl text-sm font-bold shadow-lg transition-all active:scale-95">
+              + THÊM MỚI
+            </button>
+          </div>
         </div>
       </div>
       
@@ -110,54 +161,62 @@ export const TaskTable: React.FC<TaskTableProps> = ({ tasks, showOwner, onAddNew
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filteredTasks.map((task) => (
-              <tr key={task.id} className="group hover:bg-slate-50 transition-colors">
-                <td className="px-6 py-4 text-center font-black text-slate-300 group-hover:text-blue-500 transition-colors">{task.stt}</td>
-                <td className="px-6 py-4">
-                  <div className="flex flex-col max-w-md">
-                    <span className="font-bold text-slate-800 leading-tight mb-1 cursor-pointer" onClick={() => onViewClick(task)}>{task.content}</span>
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">{task.documentRef}</span>
-                  </div>
-                </td>
-                {showOwner && (
-                  <td className="px-6 py-4">
-                    <span className="text-xs font-bold text-slate-600">{task.ownerName}</span>
-                  </td>
-                )}
-                <td className="px-6 py-4">
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
-                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
-                      Hạn: {new Date(task.deadline).toLocaleDateString('vi-VN')}
-                    </div>
-                    {task.completedDate && (
-                      <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-600">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                        Xong: {new Date(task.completedDate).toLocaleDateString('vi-VN')}
-                      </div>
-                    )}
-                  </div>
-                </td>
-                <td className="px-6 py-4 text-center">{getStatusBadge(task)}</td>
-                <td className="px-4 py-4">
-                  <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => onViewClick(task)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="Xem chi tiết"><Eye size={16} /></button>
-                    <button onClick={() => onEditClick(task)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg" title="Sửa công việc"><Pencil size={16} /></button>
-                    <button 
-                      onClick={() => {
-                        if (confirm(`Bạn có chắc chắn muốn xóa công việc này?\n\n"${task.content}"`)) {
-                          onDeleteClick(task.id);
-                        }
-                      }} 
-                      className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
-                      title="Xóa công việc"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
+            {filteredTasks.length === 0 ? (
+              <tr>
+                <td colSpan={showOwner ? 6 : 5} className="px-6 py-12 text-center text-slate-400 italic">
+                  Không có dữ liệu báo cáo cho thời gian này.
                 </td>
               </tr>
-            ))}
+            ) : (
+              filteredTasks.map((task) => (
+                <tr key={task.id} className="group hover:bg-slate-50 transition-colors">
+                  <td className="px-6 py-4 text-center font-black text-slate-300 group-hover:text-blue-500 transition-colors">{task.stt}</td>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col max-w-md">
+                      <span className="font-bold text-slate-800 leading-tight mb-1 cursor-pointer" onClick={() => onViewClick(task)}>{task.content}</span>
+                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">{task.documentRef}</span>
+                    </div>
+                  </td>
+                  {showOwner && (
+                    <td className="px-6 py-4">
+                      <span className="text-xs font-bold text-slate-600">{task.ownerName}</span>
+                    </td>
+                  )}
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+                        Hạn: {new Date(task.deadline).toLocaleDateString('vi-VN')}
+                      </div>
+                      {task.completedDate && (
+                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-600">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                          Xong: {new Date(task.completedDate).toLocaleDateString('vi-VN')}
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-center">{getStatusBadge(task)}</td>
+                  <td className="px-4 py-4">
+                    <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => onViewClick(task)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="Xem chi tiết"><Eye size={16} /></button>
+                      <button onClick={() => onEditClick(task)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg" title="Sửa công việc"><Pencil size={16} /></button>
+                      <button 
+                        onClick={() => {
+                          if (confirm(`Bạn có chắc chắn muốn xóa công việc này?\n\n"${task.content}"`)) {
+                            onDeleteClick(task.id);
+                          }
+                        }} 
+                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                        title="Xóa công việc"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
